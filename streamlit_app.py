@@ -1,151 +1,133 @@
 import streamlit as st
-import base64
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.padding import PKCS7
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives import serialization
+import os
+import base64
 import socket
 import threading
-import os
 
-# Constants for server communication
-HOST = '127.0.0.1'
+# Server to facilitate key and message exchange
+HOST = '127.0.0.1'  # Localhost
 PORT = 65432
+shared_data = {'encrypted_message': None, 'shared_key': None}
 
-# Encryption utility functions
+# Function for the server thread
+def server_thread():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind((HOST, PORT))
+    server.listen(1)
+    conn, _ = server.accept()
+
+    while True:
+        data = conn.recv(1024).decode()
+        if data.startswith("KEY:"):
+            shared_data['shared_key'] = data[4:]
+        elif data.startswith("MSG:"):
+            shared_data['encrypted_message'] = data[4:]
+
+    conn.close()
+    server.close()
+
+threading.Thread(target=server_thread, daemon=True).start()
+
+# ECC Key generation
 def generate_keys():
     private_key = ec.generate_private_key(ec.SECP256R1())
     public_key = private_key.public_key()
     return private_key, public_key
 
-def derive_shared_key(private_key, peer_public_key):
-    shared_key = private_key.exchange(ec.ECDH(), peer_public_key)
-    derived_key = HKDF(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=None,
-        info=b'handshake data'
-    ).derive(shared_key)
-    return derived_key
-
-def encrypt_message(key, plaintext):
-    # Generate a random IV
+# Encrypt using AES
+def aes_encrypt(shared_key, plaintext):
     iv = os.urandom(16)
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
+    cipher = Cipher(algorithms.AES(shared_key), modes.CFB(iv))
     encryptor = cipher.encryptor()
+    ciphertext = encryptor.update(plaintext.encode()) + encryptor.finalize()
+    return iv, ciphertext
 
-    # Pad plaintext to be block-aligned
-    padder = PKCS7(algorithms.AES.block_size).padder()
-    padded_data = padder.update(plaintext.encode()) + padder.finalize()
-
-    # Encrypt the padded plaintext
-    ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-
-    return iv + ciphertext
-
-def decrypt_message(key, ciphertext):
-    # Extract IV and actual ciphertext
-    iv = ciphertext[:16]
-    actual_ciphertext = ciphertext[16:]
-
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
+# Decrypt using AES
+def aes_decrypt(shared_key, iv, ciphertext):
+    cipher = Cipher(algorithms.AES(shared_key), modes.CFB(iv))
     decryptor = cipher.decryptor()
-
-    # Decrypt and unpad the ciphertext
-    padded_plaintext = decryptor.update(actual_ciphertext) + decryptor.finalize()
-    unpadder = PKCS7(algorithms.AES.block_size).unpadder()
-    plaintext = unpadder.update(padded_plaintext) + unpadder.finalize()
-
+    plaintext = decryptor.update(ciphertext) + decryptor.finalize()
     return plaintext.decode()
 
-# Server to handle encrypted message transmission
-def start_server():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
-        server_socket.bind((HOST, PORT))
-        server_socket.listen()
-        conn, addr = server_socket.accept()
-        with conn:
-            st.session_state["received_encrypted_message"] = conn.recv(1024)
+# Streamlit app logic
+st.title("Message Encryption using Elliptic Curve Cryptography")
 
-def send_message(encrypted_message):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
-        client_socket.connect((HOST, PORT))
-        client_socket.sendall(encrypted_message)
+option = st.selectbox("Select your role:", ["Sender", "Receiver"])
 
-# Streamlit application
-def main():
-    st.title("Message Encryption using Elliptic Curve Cryptography")
+if option == "Sender":
+    st.header("Sender Section")
 
-    mode = st.radio("Are you a sender or receiver?", ("Sender", "Receiver"))
+    sender_private_key, sender_public_key = generate_keys()
+    sender_public_pem = sender_public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
 
-    if mode == "Sender":
-        st.header("Sender Mode")
+    st.write("Generated Public Key:")
+    st.code(sender_public_pem.decode())
 
-        # Generate sender keys
-        sender_private_key, sender_public_key = generate_keys()
-        st.write("Sender's ECC key pair generated.")
+    receiver_public_key_pem = st.text_area("Enter Receiver's Public Key:")
 
-        # Display sender's public key
-        sender_public_pem = sender_public_key.public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
+    if receiver_public_key_pem:
+        receiver_public_key = serialization.load_pem_public_key(
+            receiver_public_key_pem.encode()
         )
-        st.text_area("Sender Public Key (share this):", sender_public_pem.decode(), height=100)
 
-        peer_public_key_pem = st.text_area("Enter Receiver's Public Key:")
-        if st.button("Set Receiver Public Key"):
-            peer_public_key = serialization.load_pem_public_key(peer_public_key_pem.encode())
+        shared_key = sender_private_key.exchange(ec.ECDH(), receiver_public_key)
+        derived_key = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=None,
+            info=b'handshake'
+        ).derive(shared_key)
 
-            # Derive shared key
-            shared_key = derive_shared_key(sender_private_key, peer_public_key)
-            st.write("Shared key derived.")
+        message = st.text_input("Enter message to encrypt:")
+        if message:
+            iv, encrypted_message = aes_encrypt(derived_key, message)
+            st.write("Encryption Steps:")
+            st.write(f"1. Shared key derived using ECC: {base64.b64encode(shared_key).decode()}")
+            st.write(f"2. AES encryption applied with IV: {base64.b64encode(iv).decode()}.")
+            st.write(f"3. Encrypted Message: {base64.b64encode(encrypted_message).decode()}.")
 
-            # Enter message for encryption
-            message = st.text_input("Enter the message to encrypt:")
-            if message:
-                encrypted_message = encrypt_message(shared_key, message)
-                st.write("Message encrypted.")
+            # Send to server
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect((HOST, PORT))
+                s.sendall(f"KEY:{base64.b64encode(derived_key).decode()}".encode())
+                s.sendall(f"MSG:{base64.b64encode(iv + encrypted_message).decode()}".encode())
 
-                # Send the encrypted message to receiver
-                send_message(encrypted_message)
-                st.write("Encrypted message sent.")
+if option == "Receiver":
+    st.header("Receiver Section")
 
-    elif mode == "Receiver":
-        st.header("Receiver Mode")
+    receiver_private_key, receiver_public_key = generate_keys()
+    receiver_public_pem = receiver_public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
 
-        # Generate receiver keys
-        receiver_private_key, receiver_public_key = generate_keys()
-        st.write("Receiver's ECC key pair generated.")
+    st.write("Generated Public Key:")
+    st.code(receiver_public_pem.decode())
 
-        # Display receiver's public key
-        receiver_public_pem = receiver_public_key.public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
+    sender_public_key_pem = st.text_area("Enter Sender's Public Key:")
+
+    if sender_public_key_pem:
+        sender_public_key = serialization.load_pem_public_key(
+            sender_public_key_pem.encode()
         )
-        st.text_area("Receiver Public Key (share this):", receiver_public_pem.decode(), height=100)
 
-        # Wait for encrypted message from sender
-        if st.button("Start Server to Receive Message"):
-            threading.Thread(target=start_server).start()
+        if shared_data['shared_key'] and shared_data['encrypted_message']:
+            shared_key = base64.b64decode(shared_data['shared_key'])
+            encrypted_data = base64.b64decode(shared_data['encrypted_message'])
+            iv, ciphertext = encrypted_data[:16], encrypted_data[16:]
 
-        if "received_encrypted_message" in st.session_state:
-            encrypted_message = st.session_state["received_encrypted_message"]
-            st.write("Encrypted message received:", base64.b64encode(encrypted_message).decode())
+            st.write("Decryption Steps:")
+            st.write(f"1. Shared key derived using ECC: {base64.b64encode(shared_key).decode()}.")
+            st.write(f"2. Extracted IV: {base64.b64encode(iv).decode()}.")
+            st.write(f"3. Ciphertext: {base64.b64encode(ciphertext).decode()}.")
 
-            peer_public_key_pem = st.text_area("Enter Sender's Public Key:")
-            if st.button("Set Sender Public Key"):
-                peer_public_key = serialization.load_pem_public_key(peer_public_key_pem.encode())
-
-                # Derive shared key
-                shared_key = derive_shared_key(receiver_private_key, peer_public_key)
-                st.write("Shared key derived.")
-
-                # Decrypt message
-                decrypted_message = decrypt_message(shared_key, encrypted_message)
-                st.write("Decrypted message:", decrypted_message)
-
-if __name__ == "__main__":
-    main()
+            plaintext = aes_decrypt(shared_key, iv, ciphertext)
+            st.write("Decrypted Message:")
+            st.success(plaintext)
