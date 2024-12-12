@@ -1,4 +1,3 @@
-# streamlit_app.py
 import streamlit as st
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
@@ -55,14 +54,14 @@ if role == "Sender":
         st.session_state.sender_public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
-    )).decode())
+        )).decode())
 
     receiver_public_key_pem = st.text_area("Enter Receiver's Public Key")
 
     if st.button("Generate Shared Key"):
         try:
-            receiver_public_key = ec.EllipticCurvePublicKey.from_encoded_point(
-                ec.SECP256R1(), base64.b64decode(receiver_public_key_pem.encode())
+            receiver_public_key = serialization.load_pem_public_key(
+                base64.b64decode(receiver_public_key_pem.encode())
             )
             st.session_state.shared_key = derive_shared_key(
                 st.session_state.sender_private_key, receiver_public_key
@@ -90,16 +89,16 @@ elif role == "Receiver":
     st.write("Your public key (share with sender):")
     st.code(base64.b64encode(
         st.session_state.receiver_public_key.public_bytes(
-            encoding=ec.Encoding.PEM,
-            format=ec.PublicFormat.SubjectPublicKeyInfo,
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )).decode())
 
     sender_public_key_pem = st.text_area("Enter Sender's Public Key")
 
     if st.button("Generate Shared Key"):
         try:
-            sender_public_key = ec.EllipticCurvePublicKey.from_encoded_point(
-                ec.SECP256R1(), base64.b64decode(sender_public_key_pem.encode())
+            sender_public_key = serialization.load_pem_public_key(
+                base64.b64decode(sender_public_key_pem.encode())
             )
             st.session_state.shared_key = derive_shared_key(
                 st.session_state.receiver_private_key, sender_public_key
