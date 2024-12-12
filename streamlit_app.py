@@ -7,6 +7,7 @@ import os
 import base64
 import socket
 import threading
+import time
 
 # Server to facilitate key and message exchange
 HOST = '127.0.0.1'  # Localhost
@@ -118,16 +119,20 @@ if option == "Receiver":
             sender_public_key_pem.encode()
         )
 
-        if shared_data['shared_key'] and shared_data['encrypted_message']:
-            shared_key = base64.b64decode(shared_data['shared_key'])
-            encrypted_data = base64.b64decode(shared_data['encrypted_message'])
-            iv, ciphertext = encrypted_data[:16], encrypted_data[16:]
+        st.write("Waiting for the encrypted message...")
 
-            st.write("Decryption Steps:")
-            st.write(f"1. Shared key derived using ECC: {base64.b64encode(shared_key).decode()}.")
-            st.write(f"2. Extracted IV: {base64.b64encode(iv).decode()}.")
-            st.write(f"3. Ciphertext: {base64.b64encode(ciphertext).decode()}.")
+        while not shared_data['shared_key'] or not shared_data['encrypted_message']:
+            time.sleep(1)  # Wait for the server to update the shared data
 
-            plaintext = aes_decrypt(shared_key, iv, ciphertext)
-            st.write("Decrypted Message:")
-            st.success(plaintext)
+        shared_key = base64.b64decode(shared_data['shared_key'])
+        encrypted_data = base64.b64decode(shared_data['encrypted_message'])
+        iv, ciphertext = encrypted_data[:16], encrypted_data[16:]
+
+        st.write("Decryption Steps:")
+        st.write(f"1. Shared key derived using ECC: {base64.b64encode(shared_key).decode()}.")
+        st.write(f"2. Extracted IV: {base64.b64encode(iv).decode()}.")
+        st.write(f"3. Ciphertext: {base64.b64encode(ciphertext).decode()}.")
+
+        plaintext = aes_decrypt(shared_key, iv, ciphertext)
+        st.write("Decrypted Message:")
+        st.success(plaintext)
