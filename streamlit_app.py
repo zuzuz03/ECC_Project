@@ -11,7 +11,7 @@ import time
 
 # Server to facilitate key and message exchange
 HOST = '127.0.0.1'  # Localhost
-PORT = 65432
+PORT = 65433
 shared_data = {'encrypted_message': None, 'shared_key': None}
 
 # Function for the server thread
