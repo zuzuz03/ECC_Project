@@ -10,8 +10,8 @@ import threading
 import time
 
 # Server to facilitate key and message exchange
-HOST = '192.168.1.19'  # Localhost
-PORT = 65433
+HOST = '127.0.0.1'  # Localhost
+PORT = 65432
 shared_data = {'encrypted_message': None, 'shared_key': None}
 
 # Function for the server thread
