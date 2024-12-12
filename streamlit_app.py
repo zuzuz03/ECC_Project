@@ -34,10 +34,15 @@ def server_thread():
 threading.Thread(target=server_thread, daemon=True).start()
 
 # ECC Key generation
-def generate_keys():
-    private_key = ec.generate_private_key(ec.SECP256R1())
-    public_key = private_key.public_key()
-    return private_key, public_key
+# ECC Key generation with persistence
+def get_or_create_keys(role):
+    if f"{role}_private_key" not in st.session_state:
+        private_key = ec.generate_private_key(ec.SECP256R1())
+        public_key = private_key.public_key()
+        st.session_state[f"{role}_private_key"] = private_key
+        st.session_state[f"{role}_public_key"] = public_key
+    return st.session_state[f"{role}_private_key"], st.session_state[f"{role}_public_key"]
+
 
 # Encrypt using AES
 def aes_encrypt(shared_key, plaintext):
@@ -62,7 +67,7 @@ option = st.selectbox("Select your role:", ["Sender", "Receiver"])
 if option == "Sender":
     st.header("Sender Section")
 
-    sender_private_key, sender_public_key = generate_keys()
+    sender_private_key, sender_public_key = get_or_create_keys("sender")
     sender_public_pem = sender_public_key.public_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo
@@ -103,7 +108,7 @@ if option == "Sender":
 if option == "Receiver":
     st.header("Receiver Section")
 
-    receiver_private_key, receiver_public_key = generate_keys()
+    receiver_private_key, receiver_public_key = get_or_create_keys("receiver")
     receiver_public_pem = receiver_public_key.public_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo
