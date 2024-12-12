@@ -4,6 +4,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import serialization
 import os
 import base64
 
@@ -52,9 +53,9 @@ if role == "Sender":
     st.write("Your public key (share with receiver):")
     st.code(base64.b64encode(
         st.session_state.sender_public_key.public_bytes(
-            encoding=ec.Encoding.PEM,
-            format=ec.PublicFormat.SubjectPublicKeyInfo,
-        )).decode())
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )).decode())
 
     receiver_public_key_pem = st.text_area("Enter Receiver's Public Key")
 
