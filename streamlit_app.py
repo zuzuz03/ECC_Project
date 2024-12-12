@@ -27,8 +27,8 @@ def encrypt_message(message, key):
     iv = os.urandom(16)
     cipher = Cipher(algorithms.AES(key), modes.CFB(iv))
     encryptor = cipher.encryptor()
-    ciphertext = encryptor.update(message.encode()) + encryptor.finalize()
-    return base64.b64encode(iv + ciphertext).decode()
+    ciphertext = encryptor.update(message.encode("utf-8")) + encryptor.finalize()
+    return base64.b64encode(iv + ciphertext).decode("utf-8")
 
 def decrypt_message(encrypted_message, key):
     data = base64.b64decode(encrypted_message)
@@ -36,7 +36,7 @@ def decrypt_message(encrypted_message, key):
     cipher = Cipher(algorithms.AES(key), modes.CFB(iv))
     decryptor = cipher.decryptor()
     plaintext = decryptor.update(ciphertext) + decryptor.finalize()
-    return plaintext.decode()
+    return plaintext.decode("utf-8")
 
 # Streamlit interface
 st.title("Message Encryption using ECC")
@@ -54,14 +54,14 @@ if role == "Sender":
         st.session_state.sender_public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
-        )).decode())
+        )).decode("utf-8"))
 
     receiver_public_key_pem = st.text_area("Enter Receiver's Public Key")
 
     if st.button("Generate Shared Key"):
         try:
             receiver_public_key = serialization.load_pem_public_key(
-                base64.b64decode(receiver_public_key_pem.encode())
+                base64.b64decode(receiver_public_key_pem.encode("utf-8"))
             )
             st.session_state.shared_key = derive_shared_key(
                 st.session_state.sender_private_key, receiver_public_key
@@ -91,14 +91,14 @@ elif role == "Receiver":
         st.session_state.receiver_public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
-        )).decode())
+        )).decode("utf-8"))
 
     sender_public_key_pem = st.text_area("Enter Sender's Public Key")
 
     if st.button("Generate Shared Key"):
         try:
             sender_public_key = serialization.load_pem_public_key(
-                base64.b64decode(sender_public_key_pem.encode())
+                base64.b64decode(sender_public_key_pem.encode("utf-8"))
             )
             st.session_state.shared_key = derive_shared_key(
                 st.session_state.receiver_private_key, sender_public_key
